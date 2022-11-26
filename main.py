@@ -2,8 +2,6 @@ import math
 import os
 import random
 
-from PIL import Image
-
 import pyqtgraph as pg
 import tifffile
 from PyQt5 import QtCore, QtGui
@@ -13,6 +11,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import *
 import numpy as np
 import pandas as pd
+from PIL import Image
 SOFTWAREVERSION = r'Observers Tool'
 SOFTWAREICON = r'./resources/jrk.png'
 SOFTWARECOPYRIGHT = r' 2022'
@@ -59,6 +58,7 @@ class BMAEWindow(QMainWindow):
         self.verticalLayout_SHG.addWidget(self.iv3)
         self.VLBotoom_SHG.addWidget(self.iv4)
         self.pb_choose.clicked.connect(self.pb_choose_fcn)  # 选择文件路径
+        self.grabKeyboard()
         self.setWindowTitle(SOFTWAREVERSION)
         self.setWindowIcon(QIcon(SOFTWAREICON))
     def ResetloadFile(self,path):
@@ -123,7 +123,8 @@ class BMAEWindow(QMainWindow):
         self.p5.setLabel('left', "ELCOR", units='F')
         self.p5.setLabel('bottom', "Age", units='I')
         # p5.setLogMode(x=True, y=False)
-
+        firstnode=self.dataJson[0]
+        self.resetDrawGrapher(firstnode.get('id'), firstnode.get('value'), firstnode.get('age'))
         self.scatter.scene().sigMouseMoved.connect(self.mouseover)
         self.scatter.scene().sigMouseClicked.connect(self.mouse_clicked)
         ## Make error bars
@@ -262,7 +263,7 @@ class BMAEWindow(QMainWindow):
         head_row_list = list(head_row)
         # 读取, usecols=head_row_list
         csv_result = pd.read_csv(path)
-        csv_result = csv_result.sort_values(by='Age', ascending=True)
+        csv_result = csv_result.sort_values(by=['Age', 'ELCOR_SAAID_RATIO'], ascending=[True,False])
         csv_result.drop_duplicates(subset=['ID'], keep ='first', inplace = True)
         row_list = csv_result.values.tolist()
         # print(f"行读取结果：{row_list}")
@@ -275,27 +276,86 @@ class BMAEWindow(QMainWindow):
         # print(output3)
         return row_list
 
-    def getOtherData(self,direct):
+    def getDownUpOtherData(self,direct):
         current=self.currentdata
+        currentid=current.get('id')
+        currentage = current.get('age')
         index=0
+
         for x in self.dataJson:
-            if x.get('id') == current.get('id'):
+            if x.get('id') == currentid:
                 index=(self.dataJson.index(x))
                 print(index)
-        if(direct=='down' or direct=='right'):
+        if(direct=='down'):
             index=index+1
-        else:
+        elif(direct=='up'):
             index=index-1
+
         if(len(self.dataJson)<=index):
             index=0
         if (index<0):
             index = len(self.dataJson)-1
         nextdata=self.dataJson[index]
-        self.currentdata.update({'id': nextdata.get('id')})
-        self.currentdata.update({'value': nextdata.get('value')})
-        self.currentdata.update({'age': nextdata.get('age')})
+        if(nextdata.get('age')==currentage):
+            self.currentdata.update({'id': nextdata.get('id')})
+            self.currentdata.update({'value': nextdata.get('value')})
+            self.currentdata.update({'age': nextdata.get('age')})
+        else:
+            return current
+
         return nextdata
 
+    def getLeftRightOtherData(self, direct):
+        current = self.currentdata
+        currentid = current.get('id')
+        currentage = current.get('age')
+        currentvalue = current.get('value')
+        index=0
+
+        for x in self.dataJson:
+            if x.get('id') ==currentid:
+                index = (self.dataJson.index(x))
+                print(index)
+        if (direct == 'right'):
+            index = index + 1
+        elif (direct == 'left'):
+            index = index - 1
+
+        if (len(self.dataJson) <= index):
+            index = 0
+        if (index < 0):
+            index = len(self.dataJson) - 1
+        nextdata = self.dataJson[index]
+        if (nextdata.get('age') == currentage):
+           while nextdata.get('age') == currentage:
+               if (direct == 'right'):
+                   index = index + 1
+               elif (direct == 'left'):
+                   index = index - 1
+               if (len(self.dataJson) <= index):
+                   index = 0
+               if (index < 0):
+                   index = len(self.dataJson) - 1
+               nextdata = self.dataJson[index]
+            #查询年龄相同的数据
+           nextdata=self.getAgeSameNode(nextdata.get('age'),currentvalue)
+
+        else:
+            nextdata = self.getAgeSameNode(nextdata.get('age'), currentvalue)
+            self.currentdata.update({'id': nextdata.get('id')})
+            self.currentdata.update({'value': nextdata.get('value')})
+            self.currentdata.update({'age': nextdata.get('age')})
+
+        return nextdata
+    def getAgeSameNode(self,Age,value):
+        AgeArr=[]
+        AgeValue=[]
+        for x in self.dataJson:
+            if x.get('age') == Age:
+                AgeArr.append(x)
+                AgeValue.append(x.get('value'))
+        idx,v=self.find_nearest(AgeValue,value)
+        return AgeArr[idx]
     # if contains(myList, lambda x: x.n == 3)  # True if any element has .n==3
 
     # do stuff
@@ -306,23 +366,23 @@ class BMAEWindow(QMainWindow):
         event.ignore()
         if event.key() == Qt.Key_Up:
             print('Key_Up')
-            nextdata=self.getOtherData('up')
+            nextdata=self.getDownUpOtherData('up')
             print(nextdata)
             self.resetDrawGrapher(nextdata.get('id'), nextdata.get('value'), nextdata.get('age'))
         # 组合键
         elif (event.key() == Qt.Key_Down):
             print('Key_Down')
-            nextdata=self.getOtherData('down')
+            nextdata=self.getDownUpOtherData('down')
             print(nextdata)
             self.resetDrawGrapher(nextdata.get('id'), nextdata.get('value'), nextdata.get('age'))
         elif (event.key() == Qt.Key_Left):
             print('Key_Left')
-            nextdata=self.getOtherData('left')
+            nextdata=self.getLeftRightOtherData('left')
             print(nextdata)
             self.resetDrawGrapher(nextdata.get('id'), nextdata.get('value'), nextdata.get('age'))
         elif (event.key() == Qt.Key_Right):
             print('Key_Right')
-            nextdata=self.getOtherData('right')
+            nextdata=self.getLeftRightOtherData('right')
             print(nextdata)
             self.resetDrawGrapher(nextdata.get('id'), nextdata.get('value'), nextdata.get('age'))
         else:
